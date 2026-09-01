@@ -32,8 +32,8 @@ def main():
     }
     bot = SignalBot(config)
 
-    bot.register(PingCommand(), groups=[group_id])
-    bot.register(ATAKCommand(), groups=[group_id])
+    bot.register(PingCommand(), groups=[group_id], contacts=False)
+    bot.register(ATAKCommand(), groups=[group_id], contacts=False)
 
     bot.start()
 

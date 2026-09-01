@@ -1,0 +1,10 @@
+signalbot==2.0.0
+python-dotenv==1.2.3
+
+# taky imports pkg_resources; venvs stopped bundling setuptools in Python 3.12
+setuptools==80.10.2
+
+# tests
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-mock==3.15.1

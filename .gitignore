@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.idea/
+
+# Signal linked-account credentials
+signal-cli-config/
+
+# taky CA private key, server key, client packages
+taky-server/

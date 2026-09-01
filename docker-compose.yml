@@ -1,0 +1,11 @@
+services:
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:0.100
+    environment:
+      - MODE=${SIGNAL_MODE:-json-rpc}
+    ports:
+      - "8080:8080"
+    volumes:
+      # Linked-account credentials. Project-local and gitignored.
+      - ./signal-cli-config:/home/.local/share/signal-cli
+    restart: unless-stopped

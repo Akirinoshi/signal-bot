@@ -20,12 +20,19 @@ Signal app → signal-cli-rest-api (json-rpc, :8080) → bot.py
 
 Stack: [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) · taky · iTAK.
 
+## Demo
+
+**[docs/demo.MP4](docs/demo.MP4)** — 72 seconds, recorded on the phone: four reports typed
+into the Signal group, the bot confirming each one, then the iTAK map with `tank`, `car` and
+`bus` carrying different symbols and an unrecognised label falling back to a plain hostile
+ground diamond.
+
 ## Documentation
 
 - **[docs/INSTRUCTIONS.md](docs/INSTRUCTIONS.md)** — how to set it up and run it, start to
   finish: signal-cli, linking the phone, taky and its certificates, iTAK, the bot. Then the
-  message format, the target-type table, the CoT protocol field by field, verification,
-  troubleshooting and diagnostics.
+  message format, the target-type table, the CoT protocol field by field, verification and
+  troubleshooting.
 - **[docs/APPROACH.md](docs/APPROACH.md)** — why this stack, the challenges hit along the
   way, the decisions and assumptions made, and what it deliberately does not do.
 
@@ -57,7 +64,7 @@ commands/atak.py          Signal handler — validate, build, reply
 utils/cot_utils.py        target types, coordinate validation, CoT build
 services/tak_service.py   mutual-TLS delivery to the TAK server
 tests/                    pytest suite
-docs/                     setup instructions, approach, screenshots
+docs/                     setup instructions, approach, demo video
 docker-compose.yml        signal-cli-rest-api
 .env.example              required variables
 requirements.txt          bot dependencies

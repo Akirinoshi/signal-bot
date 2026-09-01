@@ -1,3 +1,5 @@
+"""Entrypoint: loads .env, wires the handlers to one Signal group, runs the bot."""
+
 import logging
 import os
 
@@ -11,6 +13,11 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 
 def main():
+    """Start the bot against the group named by GROUP_ID.
+
+    Handlers are bound to groups once, here at startup — a group created later
+    is not picked up until the bot restarts.
+    """
     load_dotenv()
 
     signal_service = os.environ["SIGNAL_SERVICE"]

@@ -13,6 +13,8 @@ A labelled hostile ground marker appears on the map.
 
 Stack: [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) · taky · iTAK.
 
+Why this stack, what went wrong and what it does not do: [APPROACH.md](APPROACH.md).
+
 Substitute your own values for the placeholders used throughout:
 
 | Placeholder | Value |
@@ -214,7 +216,7 @@ the group does not produce markers.
 
 The label does two jobs: it is the callsign drawn on the map, and it picks the CoT type, so
 a `tank` and a `truck` get different symbols rather than one generic box. Mapping lives in
-`COT_TYPES` (`commands/atak.py`); codes are MIL-STD-2525 branches from the CoT type list
+`COT_TYPES` (`utils/cot_utils.py`); codes are MIL-STD-2525 branches from the CoT type list
 with the affiliation slot set to `h`, hostile.
 
 | Label | CoT type | Symbol |
@@ -293,6 +295,14 @@ Signal app → signal-cli-rest-api (json-rpc, :8080) → bot.py
 taky runs with `client_cert_required = True`, so the bot presents a client certificate and
 verifies the server against `taky-server/ssl/ca.crt`. Hostname checking is disabled
 because the certificate is issued for an IP address, not a DNS name.
+
+`TakService` (`services/tak_service.py`) owns that leg: certificates, socket, null-byte
+framing, and the `TAK_HOST` / `TAK_PORT` lookup. The socket work is blocking and can take
+the full five-second timeout, so `send` runs it on a worker thread — on the event loop the
+bot would stop reading Signal for those seconds. It raises `TakDeliveryError` when the event
+never left the bot, which is what turns the group reply into a failure notice rather than a
+false confirmation. The handler takes the service as a constructor argument, so tests drive
+the whole path without a server.
 
 ## Verification
 
@@ -386,9 +396,12 @@ curl -s -X POST http://127.0.0.1:8080/v2/send \
 ## Layout
 
 ```
+APPROACH.md               stack choice, challenges, assumptions, limitations
 bot.py                    entrypoint — loads .env, registers handlers
 commands/ping.py          "ping" → "pong", liveness check
-commands/atak.py          coordinate parsing, CoT build, TLS send
+commands/atak.py          Signal handler — validate, build, reply
+utils/cot_utils.py        target types, coordinate validation, CoT build
+services/tak_service.py   mutual-TLS delivery to the TAK server
 docker-compose.yml        signal-cli-rest-api
 .env.example              required variables
 requirements.txt          bot dependencies

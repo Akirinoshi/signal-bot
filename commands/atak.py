@@ -2,6 +2,7 @@ from signalbot import DataMessageContext, DataMessageHandler, SendMessage, regex
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import logging
 import os
 import socket, ssl
 
@@ -10,12 +11,58 @@ import socket, ssl
 SSL_DIR = Path(__file__).resolve().parent.parent / "taky-server" / "ssl"
 
 
+#   a-h-G-E-V-A-T   Gnd/Equip/Vehic/Armor/Tank
+#   a-h-G-E-V-U-X   Gnd/Equip/Vehic/Cross Country Truck
+#   a-h-G-E-V-U-B   Gnd/Equip/Vehic/Bus
+#   a-h-G-E-V-U     Gnd/Equip/Vehic/Utility
+#   a-h-G-U-C-I     Gnd/Combat/Infantry/Troops (Open)
+COT_TYPES = {
+    "tank": "a-h-G-E-V-A-T",
+    "truck": "a-h-G-E-V-U-X",
+    "bus": "a-h-G-E-V-U-B",
+    "vehicle": "a-h-G-E-V-U",
+    "car": "a-h-G-E-V-U",
+    "infantry": "a-h-G-U-C-I",
+    "troops": "a-h-G-U-C-I",
+}
+
+# Unrecognized label: hostile ground, affiliation and domain only
+DEFAULT_COT_TYPE = "a-h-G"
+
+
+def cot_type_for(label: str) -> str:
+    """CoT type for a reported target label, case-insensitive."""
+    return COT_TYPES.get(label.strip().lower(), DEFAULT_COT_TYPE)
+
+
+LAT_LIMIT = 90.0
+LON_LIMIT = 180.0
+
+
+def coord_error(lat: str, lon: str) -> str | None:
+    """Reason the coordinates are unusable, or None if both are in range."""
+    if abs(float(lat)) > LAT_LIMIT:
+        return f"latitude {lat} is outside ±{LAT_LIMIT:g}"
+    if abs(float(lon)) > LON_LIMIT:
+        return f"longitude {lon} is outside ±{LON_LIMIT:g}"
+    return None
+
+
 class ATAKCommand(DataMessageHandler):
     COORD_RE = r"^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(\S+)\s*$"
 
     @regex_triggered(COORD_RE)
     async def handle_data_message(self, c: DataMessageContext):
         lat, lon, label = c.message.text.split()
+
+        error = coord_error(lat, lon)
+        if error:
+            await c.send(SendMessage(
+                text=f"Could not add {label} to the map — {error}. "
+                     f"Expected: <latitude ±90> <longitude ±180> <label>, "
+                     f"e.g. 48.567123 39.87897 tank"
+            ))
+            return
 
         now = datetime.now(timezone.utc)
 
@@ -28,8 +75,7 @@ class ATAKCommand(DataMessageHandler):
             # re-send of the same report refreshes one marker in place.
             "uid": f"{label}-{lat}-{lon}",
 
-            # Hostile ground object (a = atom, h = hostile, G = ground).
-            "type": "a-h-G",
+            "type": cot_type_for(label),
 
             # h-e = human entered. The report is typed by an operator in Signal,
             # not produced by a sensor; ATAK uses this to weigh confidence.
@@ -47,7 +93,7 @@ class ATAKCommand(DataMessageHandler):
         ET.SubElement(event, "point", {
             # Task labels the example as (longitude, latitude), but in that order
             # 48.567/39.879 lands in the Caspian Sea — lat 48.567 / lon 39.879 is
-            # eastern Ukraine. Parsed as lat-first. See README, "Assumptions".
+            # eastern Ukraine. Parsed as lat-first.
             "lat": lat,
             "lon": lon,
 
@@ -77,8 +123,17 @@ class ATAKCommand(DataMessageHandler):
         host = os.environ["TAK_HOST"]
         port = int(os.environ.get("TAK_PORT", 8089))
 
-        with socket.create_connection((host, port), timeout=5) as raw:
-            with ctx.wrap_socket(raw) as s:
-                s.sendall(cot_xml + b"\x00")
+        try:
+            with socket.create_connection((host, port), timeout=5) as raw:
+                with ctx.wrap_socket(raw) as s:
+                    s.sendall(cot_xml + b"\x00")
+        except OSError as e:
+            logging.exception("Failed to deliver CoT for %r to %s:%s", label, host, port)
+            await c.send(SendMessage(
+                text=f"Could not add {label} to the map — TAK server {host}:{port} unreachable ({e})."
+            ))
+            return
 
-        await c.send(SendMessage(text=cot_xml))
+        await c.send(SendMessage(
+            text=f"Added {label} to the map at {lat}, {lon}"
+        ))

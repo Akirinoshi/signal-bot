@@ -110,11 +110,16 @@ the iPhone can reach:
 
 ```bash
 ipconfig getifaddr $(route -n get default | awk '/interface:/{print $2}')
-# → use this as {your_lan_ip} below
+# → use this as {your_lan_ip} below and as a TAK_HOST in .env
 ```
 
 **Generate the server and certificates.** Skip this if `taky-server/` already exists:
 regenerating the CA invalidates every client package already imported on a phone.
+
+hostname is the name of the machine running the server in my example it is Mac -> 
+
+![img.png](img.png)
+
 
 ```bash
 takyctl setup --host {hostname} --public-ip {your_lan_ip} ./taky-server
@@ -128,6 +133,10 @@ taky accepts them (`client_cert_required = True`).
 
 **Open the LAN path.** Port 8089 must be reachable from the phone. For a local test,
 System Settings → Network → Firewall → off, or allow inbound connections for `python`.
+Or you can do it via terminal:
+```bash
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate off
+```
 
 **Start the server** (SSL listener on 8089):
 
@@ -201,9 +210,40 @@ Trigger regex (`commands/atak.py`): `^\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s
 The label must be a single token, no spaces. Anything else is ignored, so ordinary chat in
 the group does not produce markers.
 
+### Target types
+
+The label does two jobs: it is the callsign drawn on the map, and it picks the CoT type, so
+a `tank` and a `truck` get different symbols rather than one generic box. Mapping lives in
+`COT_TYPES` (`commands/atak.py`); codes are MIL-STD-2525 branches from the CoT type list
+with the affiliation slot set to `h`, hostile.
+
+| Label | CoT type | Symbol |
+| --- | --- | --- |
+| `tank` | `a-h-G-E-V-A-T` | Gnd/Equip/Vehic/Armor/Tank |
+| `truck` | `a-h-G-E-V-U-X` | Gnd/Equip/Vehic/Cross Country Truck |
+| `bus` | `a-h-G-E-V-U-B` | Gnd/Equip/Vehic/Bus |
+| `vehicle`, `car` | `a-h-G-E-V-U` | Gnd/Equip/Vehic/Utility |
+| `infantry`, `troops` | `a-h-G-U-C-I` | Gnd/Combat/Infantry/Troops (Open) |
+| anything else | `a-h-G` | hostile ground, unspecified |
+
+An unrecognised label falls back to `a-h-G` on purpose: the report establishes something
+hostile on the ground at that point and nothing more, and guessing a symbol from an unknown
+word would put a claim on the map the operator never made. Extend the table to add types.
+
 **Coordinate order.** Read as longitude-then-latitude, the sample `48.567123 39.87897`
 lands in the Caspian Sea. Read latitude-first it is eastern Ukraine, the intended target
 area — so the bot parses latitude first.
+
+**Coordinate range.** The trigger regex only checks shape, so `999.9 999.9 tank` and
+`91 181 tank` match it. Latitude is range-checked against ±90 and longitude against ±180
+before anything is transmitted; a report outside those bounds gets a reply naming the
+offending value and never reaches the TAK server.
+
+```
+> 91 181 tank
+Could not add tank to the map — latitude 91 is outside ±90. Expected: <latitude ±90>
+<longitude ±180> <label>, e.g. 48.567123 39.87897 tank
+```
 
 ## CoT protocol
 
@@ -214,7 +254,7 @@ boundaries on the stream.
 ```xml
 <event version="2.0"
        uid="tank-48.567123-39.87897"
-       type="a-h-G"
+       type="a-h-G-E-V-A-T"
        how="h-e"
        time="2026-09-01T09:14:22.481Z"
        start="2026-09-01T09:14:22.481Z"
@@ -230,7 +270,7 @@ boundaries on the stream.
 | Field | Meaning |
 | --- | --- |
 | `uid` | Object identity. Same `uid` updates the existing marker; a new one adds a marker. Derived from label + coordinates so two `tank` reports do not collapse into one. |
-| `type` | MIL-STD-2525 style hierarchy. `a-h-G` = atom · hostile · ground. `a-f-G` would be friendly. |
+| `type` | MIL-STD-2525 style hierarchy, derived from the label — see [Target types](#target-types). `a-h-G` = atom · hostile · ground; `a-f-G` would be friendly. |
 | `how` | Provenance. `h-e` = human entered; the operator typed it, no sensor produced it. ATAK weighs confidence on this. |
 | `time` | When the report was generated. |
 | `start` | When the reported state became valid. |
@@ -265,11 +305,13 @@ from the Signal app to the group:
 
 Three things confirm the path:
 
-1. **Signal** — the bot replies in the group with the CoT XML it transmitted.
+1. **Signal** — the bot confirms in the group that the point was added, and says so only
+   after the CoT reached the server; a failed connection gets a failure reply instead.
 2. **taky** — started with `-l debug`, it logs the same event server-side.
-3. **iTAK** — a hostile marker labelled `tank` appears in eastern Ukraine, east of
+3. **iTAK** — a hostile armour marker labelled `tank` appears in eastern Ukraine, east of
    Luhansk. Tap it: callsign `tank`, coordinates matching what you sent. It clears itself
-   ten minutes later, when `stale` passes.
+   ten minutes later, when `stale` passes. Send the same point as `truck` and the symbol
+   changes to a hostile truck.
 
 Send a second report at different coordinates — you get a second marker, not a moved one.
 Re-send the same one and the existing marker refreshes in place. That is the `uid` doing
@@ -288,6 +330,7 @@ python -m pytest -q
 | `Bind for 0.0.0.0:8080 failed` | Another signal-cli container holds the port — `docker rm -f signal-api`. |
 | `/v1/about` reports `"mode": "normal"` | Bot needs `json-rpc`; `docker compose up -d --force-recreate`. |
 | Bot silent in the group | `GROUP_ID` wrong or missing the `group.` prefix. |
+| `Could not add … is outside ±90` | Coordinates out of WGS-84 range, or latitude and longitude swapped. |
 | `'group.…' is not a valid group name or id` | The group did not exist when the bot started. Create it, then restart the bot. |
 | `KeyError: 'TAK_HOST'` | `.env` incomplete — see `.env.example`. |
 | `ModuleNotFoundError: No module named 'pkg_resources'` | `pip install setuptools` — taky needs it, venvs no longer bundle it. |

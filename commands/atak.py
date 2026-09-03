@@ -28,13 +28,13 @@ class ATAKCommand(DataMessageHandler):
         self.tak = tak or TakService()
 
     @regex_triggered(COORD_RE)
-    async def handle_data_message(self, c: DataMessageContext):
+    async def handle_data_message(self, context: DataMessageContext):
         """Validate the report, transmit it, and reply with what actually happened."""
-        lat, lon, label = c.message.text.split()
+        lat, lon, label = context.message.text.split()
 
         error = coord_error(lat, lon)
         if error:
-            await c.send(SendMessage(
+            await context.send(SendMessage(
                 text=f"Could not add {label} to the map — {error}. "
                      f"Expected: <latitude ±90> <longitude ±180> <label>, "
                      f"e.g. 48.567123 39.87897 tank"
@@ -47,11 +47,11 @@ class ATAKCommand(DataMessageHandler):
         try:
             await self.tak.send(cot_xml)
         except TakDeliveryError as e:
-            await c.send(SendMessage(
+            await context.send(SendMessage(
                 text=f"Could not add {label} to the map — {e}."
             ))
             return
 
-        await c.send(SendMessage(
+        await context.send(SendMessage(
             text=f"Added {label} to the map at {lat}, {lon}"
         ))
